@@ -1,2 +1,3 @@
-# ONEPAPERMCQS
-ONE PAPER MCQS
+# MCQS Maker
+
+Plugin description placeholder
