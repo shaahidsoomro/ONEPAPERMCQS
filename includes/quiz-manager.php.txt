@@ -1,0 +1,67 @@
+<?php
+if (!defined('ABSPATH')) exit;
+
+/**
+ * Get all questions linked to a quiz using stored JSON question IDs
+ */
+function mcqs_maker_get_quiz_questions($quiz_id) {
+    global $wpdb;
+
+    $quiz = $wpdb->get_row($wpdb->prepare(
+        "SELECT questions FROM {$wpdb->prefix}mcqs_quizzes WHERE id = %d",
+        $quiz_id
+    ));
+
+    if (!$quiz) return [];
+
+    $question_ids = json_decode($quiz->questions, true);
+    if (!is_array($question_ids)) return [];
+
+    $placeholders = implode(',', array_fill(0, count($question_ids), '%d'));
+    return $wpdb->get_results($wpdb->prepare(
+        "SELECT * FROM {$wpdb->prefix}mcqs_questions WHERE id IN ($placeholders)",
+        ...$question_ids
+    ));
+}
+
+/**
+ * Save a list of question IDs to a quiz
+ */
+function mcqs_maker_assign_questions_to_quiz($quiz_id, $question_ids = []) {
+    global $wpdb;
+
+    if (empty($question_ids) || !is_array($question_ids)) return false;
+
+    $question_ids = array_map('intval', $question_ids);
+    $json_ids = json_encode($question_ids);
+
+    return $wpdb->update(
+        "{$wpdb->prefix}mcqs_quizzes",
+        ['questions' => $json_ids],
+        ['id' => $quiz_id],
+        ['%s'],
+        ['%d']
+    );
+}
+
+/**
+ * Count how many times a quiz was attempted
+ */
+function mcqs_maker_get_attempt_count($quiz_id) {
+    global $wpdb;
+    return $wpdb->get_var($wpdb->prepare(
+        "SELECT COUNT(*) FROM {$wpdb->prefix}mcqs_attempts WHERE quiz_id = %d",
+        $quiz_id
+    ));
+}
+
+/**
+ * Get average score for a quiz
+ */
+function mcqs_maker_get_quiz_average_score($quiz_id) {
+    global $wpdb;
+    return $wpdb->get_var($wpdb->prepare(
+        "SELECT AVG(score) FROM {$wpdb->prefix}mcqs_attempts WHERE quiz_id = %d",
+        $quiz_id
+    ));
+}

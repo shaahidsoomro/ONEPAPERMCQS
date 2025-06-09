@@ -1,0 +1,61 @@
+/* User Interface Styles - MCQS Maker */
+.mcqs-wrapper {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+  background: #fff;
+}
+
+.mcqs-wrapper h2 {
+  font-size: 24px;
+  margin-bottom: 20px;
+  color: #34495e;
+}
+
+.mcqs-wrapper ul {
+  list-style: none;
+  padding: 0;
+}
+
+.mcqs-wrapper li {
+  background: #f7f7f7;
+  padding: 15px;
+  margin-bottom: 10px;
+  border-left: 4px solid #3498db;
+}
+
+.mcqs-wrapper form {
+  margin-top: 20px;
+}
+
+.mcqs-wrapper input[type="radio"] {
+  margin-right: 5px;
+}
+
+.mcqs-wrapper label {
+  display: block;
+  margin-bottom: 10px;
+  font-weight: 500;
+}
+
+.mcqs-wrapper input[type="submit"] {
+  padding: 10px 20px;
+  background: #3498db;
+  border: none;
+  color: white;
+  cursor: pointer;
+  font-weight: bold;
+  border-radius: 3px;
+}
+
+.mcqs-wrapper table.widefat {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+}
+
+.mcqs-wrapper table.widefat th,
+.mcqs-wrapper table.widefat td {
+  padding: 10px;
+  border-bottom: 1px solid #ddd;
+}

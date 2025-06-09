@@ -1,0 +1,228 @@
+<?php
+if (!defined('ABSPATH')) exit;
+
+// Enable session for pagination
+if (!session_id()) {
+    session_start();
+}
+
+// Shortcode to display quiz interface
+add_shortcode('mcqs_quiz_interface', 'mcqs_maker_render_user_quiz_interface');
+function mcqs_maker_render_user_quiz_interface() {
+    if (!is_user_logged_in()) {
+        return '<div class="mcqs-wrapper"><p>Please <a href="' . wp_login_url() . '">login</a> to attempt quizzes.</p></div>';
+    }
+
+    if (isset($_GET['attempt_quiz'])) {
+        return mcqs_maker_render_quiz_attempt_screen(intval($_GET['attempt_quiz']));
+    }
+
+    return mcqs_maker_render_quiz_list();
+}
+
+// Quiz List with Category Filter and Retake Restriction
+function mcqs_maker_render_quiz_list() {
+    global $wpdb;
+
+    $user_id = get_current_user_id();
+    $retake_allowed = get_option('mcqs_maker_allow_retake', 'no') === 'yes';
+    $categories = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}mcqs_categories");
+    $selected_category = isset($_GET['cat']) ? intval($_GET['cat']) : 0;
+
+    $where_clause = $selected_category ? "WHERE q.category_id = $selected_category" : "";
+    $quizzes = $wpdb->get_results("SELECT q.id, q.name, c.name AS category 
+        FROM {$wpdb->prefix}mcqs_quizzes q 
+        LEFT JOIN {$wpdb->prefix}mcqs_categories c ON q.category_id = c.id 
+        $where_clause");
+
+    $output = '<div class="mcqs-wrapper"><h2>Available Quizzes</h2>
+        <form method="GET">
+            <label for="cat">Filter by Category:</label>
+            <select name="cat" id="cat" onchange="this.form.submit()">
+                <option value="">All Categories</option>';
+                foreach ($categories as $cat) {
+                    $selected = $selected_category == $cat->id ? 'selected' : '';
+                    $output .= "<option value='{$cat->id}' $selected>{$cat->name}</option>";
+                }
+    $output .= '</select></form><ul>';
+
+    if ($quizzes) {
+        foreach ($quizzes as $quiz) {
+            $attempted = $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM {$wpdb->prefix}mcqs_attempts WHERE quiz_id = %d AND user_id = %d",
+                $quiz->id, $user_id
+            ));
+
+            $can_attempt = $retake_allowed || !$attempted;
+            $attempt_text = $can_attempt
+                ? "<a href='?attempt_quiz={$quiz->id}'>Attempt Quiz</a>"
+                : "<span style='color:gray;'>Already Attempted</span>";
+
+            $output .= "<li><strong>{$quiz->name}</strong> (Category: {$quiz->category}) - $attempt_text</li>";
+        }
+    } else {
+        $output .= '<li>No quizzes found for this category.</li>';
+    }
+
+    return $output . '</ul></div>';
+}
+
+// Paginated Quiz Attempt Interface
+function mcqs_maker_render_quiz_attempt_screen($quiz_id) {
+    global $wpdb;
+
+    $quiz = $wpdb->get_row("SELECT * FROM {$wpdb->prefix}mcqs_quizzes WHERE id = $quiz_id");
+    if (!$quiz) return "<div class='mcqs-wrapper'><p>Quiz not found.</p></div>";
+
+    $question_ids = json_decode($quiz->questions, true);
+    if (!is_array($question_ids) || empty($question_ids)) return "<div class='mcqs-wrapper'><p>No questions in this quiz.</p></div>";
+
+    if (!isset($_SESSION['quiz_data']) || $_SESSION['quiz_data']['quiz_id'] != $quiz_id) {
+        $_SESSION['quiz_data'] = [
+            'quiz_id' => $quiz_id,
+            'answers' => [],
+            'current' => 0
+        ];
+    }
+
+    $current_index = $_SESSION['quiz_data']['current'];
+    $total = count($question_ids);
+
+    if (isset($_POST['answer'])) {
+        $_SESSION['quiz_data']['answers'][$question_ids[$current_index]] = sanitize_text_field($_POST['answer']);
+        $_SESSION['quiz_data']['current']++;
+
+        if ($_SESSION['quiz_data']['current'] >= $total) {
+            $correct = 0;
+            $explanations = [];
+            $user_answers = $_SESSION['quiz_data']['answers'];
+
+            $placeholders = implode(',', array_fill(0, count($question_ids), '%d'));
+            $questions = $wpdb->get_results($wpdb->prepare(
+                "SELECT * FROM {$wpdb->prefix}mcqs_questions WHERE id IN ($placeholders)", ...$question_ids
+            ));
+
+            foreach ($questions as $q) {
+                $user_ans = $user_answers[$q->id] ?? '';
+                if ($user_ans === $q->answer) $correct++;
+                else {
+                    $explanations[] = [
+                        'question' => $q->question,
+                        'your' => $user_ans,
+                        'correct' => $q->answer,
+                        'explanation' => $q->explanation,
+                        'reference' => $q->reference
+                    ];
+                }
+            }
+
+            $wpdb->insert("{$wpdb->prefix}mcqs_attempts", [
+                'user_id' => get_current_user_id(),
+                'quiz_id' => $quiz_id,
+                'score' => $correct,
+                'total' => $total
+            ]);
+
+            unset($_SESSION['quiz_data']);
+
+            $out = "<div class='mcqs-wrapper'><h2>Result</h2><p>You scored <strong>$correct</strong> out of <strong>$total</strong>.</p>";
+            if ($explanations) {
+                $out .= "<h3>Review</h3><ul>";
+                foreach ($explanations as $e) {
+                    $out .= "<li><strong>Q:</strong> {$e['question']}<br />
+                            <strong>Your Answer:</strong> {$e['your']}<br />
+                            <strong>Correct Answer:</strong> {$e['correct']}<br />
+                            <strong>Explanation:</strong> {$e['explanation']}<br />
+                            <strong>Reference:</strong> {$e['reference']}</li><hr>";
+                }
+                $out .= "</ul>";
+            }
+            return $out . "<p><a href='" . get_permalink() . "'>Back to Quiz List</a></p></div>";
+        }
+
+        wp_redirect(add_query_arg('attempt_quiz', $quiz_id));
+        exit;
+    }
+
+    $question_id = $question_ids[$current_index];
+    $q = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}mcqs_questions WHERE id = %d", $question_id));
+    if (!$q) return "<p>Question not found.</p>";
+
+    $options = json_decode($q->options, true);
+    $question_no = $current_index + 1;
+
+    $output = "<div class='mcqs-wrapper'><h2>Quiz: {$quiz->name}</h2>
+        <form method='POST'>
+            <p><strong>Question $question_no of $total:</strong> {$q->question}</p>";
+    foreach ($options as $key => $val) {
+        $output .= "<label><input type='radio' name='answer' value='$key' required> ($key) $val</label><br>";
+    }
+    $btn = ($question_no === $total) ? 'Finish Quiz' : 'Next';
+    $output .= "<br><input type='submit' value='$btn' class='button button-primary' /></form></div>";
+
+    return $output;
+}
+
+// Shortcode for User Quiz History
+add_shortcode('mcqs_quiz_history', 'mcqs_maker_user_quiz_history');
+function mcqs_maker_user_quiz_history() {
+    if (!is_user_logged_in()) {
+        return '<div class="mcqs-wrapper"><p>Please <a href="' . wp_login_url() . '">login</a> to view your quiz history.</p></div>';
+    }
+
+    global $wpdb;
+    $user_id = get_current_user_id();
+    $attempts = $wpdb->get_results($wpdb->prepare(
+        "SELECT a.*, q.name AS quiz_name FROM {$wpdb->prefix}mcqs_attempts a 
+         LEFT JOIN {$wpdb->prefix}mcqs_quizzes q ON a.quiz_id = q.id 
+         WHERE a.user_id = %d ORDER BY a.attempted_on DESC",
+        $user_id
+    ));
+
+    if (!$attempts) return "<div class='mcqs-wrapper'><p>You haven't attempted any quizzes yet.</p></div>";
+
+    $output = '<div class="mcqs-wrapper"><h2>Your Quiz History</h2><table class="widefat"><thead><tr><th>Quiz</th><th>Score</th><th>Total</th><th>Date</th></tr></thead><tbody>';
+    foreach ($attempts as $a) {
+        $output .= "<tr><td>{$a->quiz_name}</td><td>{$a->score}</td><td>{$a->total}</td><td>" . date("Y-m-d H:i", strtotime($a->attempted_on)) . "</td></tr>";
+    }
+    return $output . '</tbody></table></div>';
+}
+
+// Shortcode for Quiz Leaderboard
+add_shortcode('mcqs_leaderboard', 'mcqs_maker_leaderboard');
+function mcqs_maker_leaderboard() {
+    global $wpdb;
+    $quizzes = $wpdb->get_results("SELECT id, name FROM {$wpdb->prefix}mcqs_quizzes");
+    $selected_quiz_id = isset($_GET['quiz_id']) ? intval($_GET['quiz_id']) : 0;
+
+    $output = '<div class="mcqs-wrapper"><h2>Quiz Leaderboard</h2>
+    <form method="GET" style="margin-bottom: 20px;">
+        <select name="quiz_id" onchange="this.form.submit()">
+            <option value="">Select a Quiz</option>';
+    foreach ($quizzes as $quiz) {
+        $selected = $quiz->id == $selected_quiz_id ? 'selected' : '';
+        $output .= "<option value='{$quiz->id}' $selected>{$quiz->name}</option>";
+    }
+    $output .= '</select></form>';
+
+    if ($selected_quiz_id) {
+        $attempts = $wpdb->get_results($wpdb->prepare(
+            "SELECT a.*, u.display_name FROM {$wpdb->prefix}mcqs_attempts a 
+             LEFT JOIN {$wpdb->users} u ON a.user_id = u.ID 
+             WHERE a.quiz_id = %d ORDER BY a.score DESC, a.attempted_on ASC LIMIT 10",
+            $selected_quiz_id
+        ));
+
+        if ($attempts) {
+            $output .= '<table class="widefat"><thead><tr><th>Rank</th><th>User</th><th>Score</th><th>Total</th><th>Date</th></tr></thead><tbody>';
+            foreach ($attempts as $index => $row) {
+                $rank = $index + 1;
+                $output .= "<tr><td>$rank</td><td>{$row->display_name}</td><td>{$row->score}</td><td>{$row->total}</td><td>" . date("Y-m-d H:i", strtotime($row->attempted_on)) . "</td></tr>";
+            }
+            $output .= '</tbody></table>';
+        } else {
+            $output .= '<p>No attempts yet for this quiz.</p>';
+        }
+    }
+    return $output . '</div>';
+}

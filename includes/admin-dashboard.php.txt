@@ -1,0 +1,187 @@
+<?php
+if (!defined('ABSPATH')) exit;
+
+// Add Admin Menu Pages
+add_action('admin_menu', 'mcqs_maker_admin_menu');
+function mcqs_maker_admin_menu() {
+    add_menu_page('MCQS Maker', 'MCQS Maker', 'manage_options', 'mcqs-maker', 'mcqs_maker_admin_page', 'dashicons-welcome-learn-more', 6);
+    add_submenu_page('mcqs-maker', 'Categories', 'Categories', 'manage_options', 'mcqs-maker-categories', 'mcqs_maker_manage_categories');
+    add_submenu_page('mcqs-maker', 'Quizzes', 'Quizzes', 'manage_options', 'mcqs-maker-quizzes', 'mcqs_maker_manage_quizzes');
+    add_submenu_page('mcqs-maker', 'Questions', 'Questions', 'manage_options', 'mcqs-maker-questions', 'mcqs_maker_manage_questions');
+}
+
+// Welcome Page
+function mcqs_maker_admin_page() {
+    echo '<div class="wrap"><h1>Welcome to MCQS Maker</h1><p>Use the tabs to manage categories, quizzes, and questions.</p></div>';
+}
+
+// ---------------------- CATEGORY CRUD ----------------------
+function mcqs_maker_manage_categories() {
+    global $wpdb;
+    $table = $wpdb->prefix . 'mcqs_categories';
+
+    if (isset($_POST['add_category'])) {
+        $name = sanitize_text_field($_POST['category_name']);
+        if ($name) {
+            $wpdb->insert($table, ['name' => $name]);
+            echo '<div class="updated"><p>Category added.</p></div>';
+        }
+    }
+
+    if (isset($_GET['delete'])) {
+        $wpdb->delete($table, ['id' => intval($_GET['delete'])]);
+        echo '<div class="updated"><p>Category deleted.</p></div>';
+    }
+
+    $categories = $wpdb->get_results("SELECT * FROM $table");
+    echo '<div class="wrap"><h2>Manage Categories</h2>
+    <form method="POST">
+        <input type="text" name="category_name" placeholder="Category Name" required />
+        <input type="submit" name="add_category" class="button button-primary" value="Add Category" />
+    </form>';
+
+    echo '<h3>Existing Categories</h3><table class="widefat"><thead><tr><th>ID</th><th>Name</th><th>Action</th></tr></thead><tbody>';
+    foreach ($categories as $cat) {
+        echo "<tr><td>{$cat->id}</td><td>{$cat->name}</td><td><a href='?page=mcqs-maker-categories&delete={$cat->id}' onclick='return confirm(\"Delete?\")'>Delete</a></td></tr>";
+    }
+    echo '</tbody></table></div>';
+}
+
+// ---------------------- QUIZ CRUD ----------------------
+function mcqs_maker_manage_quizzes() {
+    global $wpdb;
+    $quiz_table = $wpdb->prefix . 'mcqs_quizzes';
+    $category_table = $wpdb->prefix . 'mcqs_categories';
+
+    if (isset($_POST['add_quiz'])) {
+        $name = sanitize_text_field($_POST['quiz_name']);
+        $category_id = intval($_POST['category_id']);
+        if ($name && $category_id) {
+            $wpdb->insert($quiz_table, [
+                'name' => $name,
+                'category_id' => $category_id,
+                'questions' => ''
+            ]);
+            echo '<div class="updated"><p>Quiz added.</p></div>';
+        }
+    }
+
+    if (isset($_GET['delete'])) {
+        $wpdb->delete($quiz_table, ['id' => intval($_GET['delete'])]);
+        echo '<div class="updated"><p>Quiz deleted.</p></div>';
+    }
+
+    $categories = $wpdb->get_results("SELECT * FROM $category_table");
+    $quizzes = $wpdb->get_results("SELECT q.*, c.name AS category_name FROM $quiz_table q LEFT JOIN $category_table c ON q.category_id = c.id");
+
+    echo '<div class="wrap"><h2>Manage Quizzes</h2>
+    <form method="POST">
+        <input type="text" name="quiz_name" placeholder="Quiz Title" required />
+        <select name="category_id" required>
+            <option value="">Select Category</option>';
+            foreach ($categories as $cat) {
+                echo "<option value='{$cat->id}'>{$cat->name}</option>";
+            }
+    echo '</select>
+        <input type="submit" name="add_quiz" class="button button-primary" value="Add Quiz" />
+    </form>';
+
+    echo '<h3>Existing Quizzes</h3><table class="widefat"><thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Action</th></tr></thead><tbody>';
+    foreach ($quizzes as $quiz) {
+        echo "<tr><td>{$quiz->id}</td><td>{$quiz->name}</td><td>{$quiz->category_name}</td><td><a href='?page=mcqs-maker-quizzes&delete={$quiz->id}' onclick='return confirm(\"Delete this quiz?\")'>Delete</a></td></tr>";
+    }
+    echo '</tbody></table></div>';
+}
+
+// ---------------------- QUESTION CRUD ----------------------
+function mcqs_maker_manage_questions() {
+    global $wpdb;
+    $question_table = $wpdb->prefix . 'mcqs_questions';
+    $category_table = $wpdb->prefix . 'mcqs_categories';
+
+    if (isset($_POST['add_question'])) {
+        $question = sanitize_textarea_field($_POST['question']);
+        $option_a = sanitize_text_field($_POST['option_a']);
+        $option_b = sanitize_text_field($_POST['option_b']);
+        $option_c = sanitize_text_field($_POST['option_c']);
+        $option_d = sanitize_text_field($_POST['option_d']);
+        $answer = sanitize_text_field($_POST['answer']);
+        $explanation = sanitize_textarea_field($_POST['explanation']);
+        $reference = sanitize_textarea_field($_POST['reference']);
+        $category_id = intval($_POST['category_id']);
+        $difficulty = sanitize_text_field($_POST['difficulty']);
+
+        $options = json_encode([
+            'a' => $option_a,
+            'b' => $option_b,
+            'c' => $option_c,
+            'd' => $option_d
+        ]);
+
+        if ($question && $answer && $category_id) {
+            $wpdb->insert($question_table, [
+                'question' => $question,
+                'options' => $options,
+                'answer' => $answer,
+                'explanation' => $explanation,
+                'reference' => $reference,
+                'category_id' => $category_id,
+                'difficulty' => $difficulty
+            ]);
+            echo '<div class="updated"><p>Question added.</p></div>';
+        }
+    }
+
+    if (isset($_GET['delete'])) {
+        $wpdb->delete($question_table, ['id' => intval($_GET['delete'])]);
+        echo '<div class="updated"><p>Question deleted.</p></div>';
+    }
+
+    $categories = $wpdb->get_results("SELECT * FROM $category_table");
+
+    echo '<div class="wrap"><h2>Manage Questions</h2>
+    <form method="POST">
+        <textarea name="question" placeholder="Enter question..." required rows="3" cols="60"></textarea><br><br>
+        <input type="text" name="option_a" placeholder="Option A" required />
+        <input type="text" name="option_b" placeholder="Option B" required />
+        <input type="text" name="option_c" placeholder="Option C" required />
+        <input type="text" name="option_d" placeholder="Option D" required /><br><br>
+        <label>Correct Answer:</label>
+        <select name="answer" required>
+            <option value="a">A</option>
+            <option value="b">B</option>
+            <option value="c">C</option>
+            <option value="d">D</option>
+        </select><br><br>
+        <textarea name="explanation" placeholder="Explanation for correct answer" rows="2" cols="60"></textarea><br>
+        <textarea name="reference" placeholder="Reference or source (optional)" rows="2" cols="60"></textarea><br><br>
+        <select name="category_id" required>
+            <option value="">Select Category</option>';
+            foreach ($categories as $cat) {
+                echo "<option value='{$cat->id}'>{$cat->name}</option>";
+            }
+    echo '</select>
+        <select name="difficulty" required>
+            <option value="Easy">Easy</option>
+            <option value="Medium" selected>Medium</option>
+            <option value="Hard">Hard</option>
+        </select><br><br>
+        <input type="submit" name="add_question" class="button button-primary" value="Add Question" />
+    </form>';
+
+    $questions = $wpdb->get_results("SELECT * FROM $question_table ORDER BY id DESC LIMIT 20");
+
+    echo '<h3>Recent Questions</h3><table class="widefat"><thead><tr><th>ID</th><th>Question</th><th>Correct</th><th>Difficulty</th><th>Explanation</th><th>Reference</th><th>Action</th></tr></thead><tbody>';
+    foreach ($questions as $q) {
+        echo "<tr>
+            <td>{$q->id}</td>
+            <td>" . esc_html(wp_trim_words($q->question, 10)) . "</td>
+            <td>{$q->answer}</td>
+            <td>{$q->difficulty}</td>
+            <td>" . esc_html(wp_trim_words($q->explanation, 12)) . "</td>
+            <td>" . esc_html(wp_trim_words($q->reference, 10)) . "</td>
+            <td><a href='?page=mcqs-maker-questions&delete={$q->id}' onclick='return confirm(\"Delete this question?\")'>Delete</a></td>
+        </tr>";
+    }
+    echo '</tbody></table></div>';
+}

@@ -1,0 +1,62 @@
+<?php
+if (!defined('ABSPATH')) exit; // Exit if accessed directly
+
+// Add submenu under MCQS Maker
+add_action('admin_menu', 'mcqs_maker_settings_menu');
+function mcqs_maker_settings_menu() {
+    add_submenu_page(
+        'mcqs-maker',                 // parent slug
+        'MCQS Settings',             // page title
+        'Settings',                  // menu title
+        'manage_options',            // capability
+        'mcqs-maker-settings',       // menu slug
+        'mcqs_maker_settings_page'   // callback function
+    );
+}
+
+// Display Settings Page
+function mcqs_maker_settings_page() {
+    ?>
+    <div class="wrap">
+        <h1>MCQS Maker Settings</h1>
+        <form method="post" action="options.php">
+            <?php
+            settings_fields('mcqs_maker_settings_group');
+            do_settings_sections('mcqs_maker_settings');
+            submit_button();
+            ?>
+        </form>
+    </div>
+    <?php
+}
+
+// Register Settings
+add_action('admin_init', 'mcqs_maker_register_settings');
+
+function mcqs_maker_register_settings() {
+    register_setting('mcqs_maker_settings_group', 'mcqs_maker_default_questions');
+    register_setting('mcqs_maker_settings_group', 'mcqs_maker_show_explanation');
+    register_setting('mcqs_maker_settings_group', 'mcqs_maker_allow_retake');
+
+    add_settings_section('mcqs_main_settings', 'General Quiz Settings', null, 'mcqs_maker_settings');
+
+    add_settings_field('mcqs_maker_default_questions', 'Default Questions per Quiz', function() {
+        echo '<input type="number" name="mcqs_maker_default_questions" value="' . esc_attr(get_option('mcqs_maker_default_questions', 10)) . '" min="1" />';
+    }, 'mcqs_maker_settings', 'mcqs_main_settings');
+
+    add_settings_field('mcqs_maker_show_explanation', 'Show Explanation After Quiz', function() {
+        $val = get_option('mcqs_maker_show_explanation', 'yes');
+        echo '<select name="mcqs_maker_show_explanation">
+                <option value="yes" ' . selected($val, 'yes', false) . '>Yes</option>
+                <option value="no" ' . selected($val, 'no', false) . '>No</option>
+              </select>';
+    }, 'mcqs_maker_settings', 'mcqs_main_settings');
+
+    add_settings_field('mcqs_maker_allow_retake', 'Allow Quiz Retake', function() {
+        $val = get_option('mcqs_maker_allow_retake', 'no');
+        echo '<select name="mcqs_maker_allow_retake">
+                <option value="yes" ' . selected($val, 'yes', false) . '>Yes</option>
+                <option value="no" ' . selected($val, 'no', false) . '>No</option>
+              </select>';
+    }, 'mcqs_maker_settings', 'mcqs_main_settings');
+}
